@@ -1,0 +1,279 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "The AWS CloudFormation template for this Serverless application's resources outside of Lambdas and Api Gateway",
+  "Resources": {
+    "DataBucket": {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "BucketName" : "${project}-data-${region}-${stage}"
+      }
+    },
+    "FrontendBucket": {
+      "Type" : "AWS::S3::Bucket",
+      "Properties" : {
+        "BucketName" : "${project}-frontsite-${region}-${stage}",
+        "AccessControl" : "PublicRead",
+        "WebsiteConfiguration" : {
+          "IndexDocument" : "index.html",
+          "ErrorDocument" : "index.html"
+        },
+        "CorsConfiguration" : {
+          "CorsRules" : [
+            {
+              "AllowedOrigins" : ["*"],
+              "AllowedMethods" : ["GET", "POST"],
+              "AllowedHeaders" : ["*"],
+              "MaxAge" : 3000
+            }
+          ]
+        },
+        "VersioningConfiguration" : {
+          "Status": "Enabled"
+        }
+      }
+    },
+    "Elasticsearch": {
+      "Type": "AWS::Elasticsearch::Domain",
+      "Properties": {
+        "AccessPolicies": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "*"
+              },
+              "Action": "es:*",
+              "Resource": "arn:aws:es:${region}:*:*"
+            }
+          ]
+        },
+        "DomainName": "offcourse-${stage}",
+        "ElasticsearchClusterConfig": {
+          "InstanceCount": "1",
+          "InstanceType": "t2.micro.elasticsearch"
+        },
+        "EBSOptions": {
+          "EBSEnabled": "true",
+          "VolumeSize": "10",
+          "VolumeType": "gp2"
+        }
+      }
+    },
+    "CoursesTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "course-id",
+            "AttributeType": "S"
+          },
+          {
+            "AttributeName": "revision",
+            "AttributeType": "N"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "course-id",
+            "KeyType": "HASH"
+          },
+          {
+            "AttributeName": "revision",
+            "KeyType": "RANGE"
+          }
+        ],
+        "ProvisionedThroughput": {
+          "ReadCapacityUnits": "1",
+          "WriteCapacityUnits": "1"
+        },
+        "StreamSpecification": {
+          "StreamViewType": "NEW_IMAGE"
+        },
+        "TableName": "courses-${stage}"
+      }
+    },
+    "RawDataStream": {
+      "Type": "AWS::Kinesis::Stream",
+      "Properties": {
+        "Name": "raw-data-${stage}",
+        "ShardCount": 1
+      }
+    },
+    "ValidDataStream": {
+      "Type": "AWS::Kinesis::Stream",
+      "Properties": {
+        "Name": "valid-data-${stage}",
+        "ShardCount": 1
+      }
+    },
+    "IamRoleLambda": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "lambda.amazonaws.com"
+                ]
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ]
+            }
+          ]
+        },
+        "Path": "/"
+      }
+    },
+    "IamPolicyLambda": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": "${stage}-${project}-lambda",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kinesis:GetRecords",
+                "kinesis:PutRecords",
+                "kinesis:PutRecord",
+                "kinesis:GetShardIterator",
+                "kinesis:DescribeStream",
+                "kinesis:ListStreams"
+              ],
+              "Resource": "arn:aws:kinesis:${region}:*:*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:*"
+              ],
+              "Resource" : {
+                "Fn::Join" : [
+                  "", ["arn:aws:s3:::", {"Ref" : "DataBucket"} , "/*" ]
+                ]
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+              ],
+              "Resource": "arn:aws:logs:${region}:*:*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "dynamodb:GetRecords",
+                "dynamodb:GetShardIterator",
+                "dynamodb:DescribeStream",
+                "dynamodb:ListStreams",
+                "dynamodb:PutItem"
+              ],
+              "Resource": "arn:aws:dynamodb:${region}:*:*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "es:*"
+              ],
+              "Resource": "arn:aws:es:${region}:*:*"
+            }
+          ]
+        },
+        "Roles": [
+          {
+            "Ref": "IamRoleLambda"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "RawDataStreamName": {
+      "Description": "Name of the requested save stream",
+      "Value": {
+        "Ref": "RawDataStream"
+      }
+    },
+    "RawDataStreamARN": {
+      "Description": "ARN of the requested save stream",
+      "Value": {
+        "Fn::GetAtt": [
+          "RawDataStream",
+          "Arn"
+        ]
+      }
+    },
+    "ValidDataStreamName": {
+      "Description": "Name of the requested save stream",
+      "Value": {
+        "Ref": "ValidDataStream"
+      }
+    },
+    "ValidDataStreamARN": {
+      "Description": "ARN of the requested save stream",
+      "Value": {
+        "Fn::GetAtt": [
+          "ValidDataStream",
+          "Arn"
+        ]
+      }
+    },
+    "ElasticsearchARN": {
+      "Description": "ARN of the Elastic Search Domain",
+      "Value": {
+        "Fn::GetAtt": [
+          "Elasticsearch",
+          "DomainArn"
+        ]
+      }
+    },
+    "ElasticsearchEndpoint": {
+      "Description": "Endpoint of the Elastic Search Domain",
+      "Value": {
+        "Fn::GetAtt": [
+          "Elasticsearch",
+          "DomainEndpoint"
+        ]
+      }
+    },
+    "CoursesTableStreamARN": {
+      "Description": "ARN of the requested save stream",
+      "Value": {
+        "Fn::GetAtt": [
+          "CoursesTable",
+          "StreamArn"
+        ]
+      }
+    },
+    "FrontendBucketName": {
+      "Description": "Name of the frontend bucket",
+      "Value": {
+        "Ref": "FrontendBucket"
+      }
+    },
+    "DataBucketName": {
+      "Description": "Name of the data bucket",
+      "Value": {
+        "Ref": "DataBucket"
+      }
+    },
+    "IamRoleArnLambda": {
+      "Description": "ARN of the lambda IAM role",
+      "Value": {
+        "Fn::GetAtt": [
+          "IamRoleLambda",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

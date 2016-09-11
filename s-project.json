@@ -1,0 +1,13 @@
+{
+  "name": "offcourse",
+  "custom": {},
+  "plugins": [
+    "serverless-client-s3",
+    "serverless-cors-plugin"
+  ],
+  "custom" : {
+    "client": {
+      "bucketName": "${frontendBucketName}"
+    }
+  }
+}
