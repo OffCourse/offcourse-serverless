@@ -1,0 +1,6 @@
+[submodule "offcourse-web"]
+	path = offcourse-web
+	url = git@github.com:OffCourse/offcourse-web.git
+[submodule "web"]
+	path = web
+	url = git@github.com:OffCourse/offcourse-web.git
